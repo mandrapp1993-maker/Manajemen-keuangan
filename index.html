@@ -106,8 +106,8 @@
     <!-- Header -->
     <div class="glass-panel header-card">
         <div class="header-title">
-            <h1>MyFinance Max</h1>
-            <p style="font-size: 0.8rem; color: var(--text-sub);">Performant & Offline Expense Tracker</p>
+            <div class="brand-row"><div class="brand-icon">💎</div><div><h1>MyFinance Max</h1>
+            <p style="font-size: 0.8rem; color: var(--text-sub);">Personal Finance Dashboard • Offline & Private</p>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
             <div class="period-selector">
@@ -126,6 +126,14 @@
         <div class="stat-card masuk"><p>Pemasukan (Bulan Ini)</p><h3 id="stat-masuk">Rp 0</h3></div>
         <div class="stat-card keluar"><p>Pengeluaran (Bulan Ini)</p><h3 id="stat-keluar">Rp 0</h3></div>
     </div>
+
+
+<div class="quick-grid">
+  <div class="quick-card"><small>📊 Transaksi</small><strong id="quick-tx">0</strong></div>
+  <div class="quick-card"><small>💳 Rekening</small><strong id="quick-wallet">0</strong></div>
+  <div class="quick-card"><small>💰 Hutang Aktif</small><strong id="quick-debt">0</strong></div>
+  <div class="quick-card"><small>⚠️ Jatuh Tempo</small><strong id="quick-overdue">0</strong></div>
+</div>
 
     <!-- Indicator Batas Anggaran (Budgeting Limit) -->
     <div class="glass-panel" style="padding: 16px;">
@@ -160,6 +168,62 @@
             </div>
         </div>
     </div>
+
+
+<!-- HUTANG & PIUTANG -->
+<div class="glass-panel">
+  <div class="section-title">
+    <div>
+      <h2>💰 Hutang & Piutang</h2>
+      <p style="font-size:.75rem;color:var(--text-sub);margin-top:3px">Pantau sisa kewajiban, pembayaran, dan jatuh tempo.</p>
+    </div>
+    <button class="btn-primary" onclick="openDebtModal()">+ Tambah</button>
+  </div>
+  <div class="debt-summary">
+    <div class="debt-stat hutang"><span>Total Hutang Saya</span><strong id="debt-total">Rp 0</strong></div>
+    <div class="debt-stat piutang"><span>Total Piutang Saya</span><strong id="debt-receivable">Rp 0</strong></div>
+    <div class="debt-stat overdue"><span>Sudah Jatuh Tempo</span><strong id="debt-overdue">Rp 0</strong></div>
+  </div>
+  <div class="debt-toolbar">
+    <div class="debt-filters">
+      <button class="debt-filter active" data-filter="all" onclick="setDebtFilter('all')">Semua</button>
+      <button class="debt-filter" data-filter="hutang" onclick="setDebtFilter('hutang')">Hutang</button>
+      <button class="debt-filter" data-filter="piutang" onclick="setDebtFilter('piutang')">Piutang</button>
+      <button class="debt-filter" data-filter="aktif" onclick="setDebtFilter('aktif')">Aktif</button>
+      <button class="debt-filter" data-filter="terlambat" onclick="setDebtFilter('terlambat')">Terlambat</button>
+      <button class="debt-filter" data-filter="lunas" onclick="setDebtFilter('lunas')">Lunas</button>
+    </div>
+    <input id="debt-search" oninput="renderDebts()" placeholder="🔎 Cari nama..." style="max-width:220px">
+  </div>
+  <div class="table-container">
+    <table>
+      <thead><tr><th>Nama</th><th>Nilai</th><th>Dibayar</th><th>Sisa</th><th>Jatuh Tempo</th><th>Status</th><th>Aksi</th></tr></thead>
+      <tbody id="debt-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="debt-modal" class="modal-backdrop" onclick="if(event.target===this)closeDebtModal()">
+  <div class="modal">
+    <h3 id="debt-modal-title">Tambah Hutang / Piutang</h3>
+    <input type="hidden" id="debt-edit-id">
+    <div class="modal-grid">
+      <input id="debt-name" class="full" placeholder="Nama / pihak terkait">
+      <select id="debt-type">
+        <option value="hutang">Saya Berhutang</option>
+        <option value="piutang">Orang Berhutang ke Saya</option>
+      </select>
+      <input id="debt-amount" placeholder="Nilai (Rp)" oninput="formatRupiahInput(this)">
+      <input id="debt-paid" placeholder="Sudah Dibayar (Rp)" oninput="formatRupiahInput(this)">
+      <input id="debt-due" type="date">
+      <input id="debt-note" class="full" placeholder="Catatan (opsional)">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeDebtModal()">Batal</button>
+      <button class="btn-primary" onclick="saveDebtForm()">Simpan</button>
+    </div>
+  </div>
+</div>
 
     <!-- Form & Tabel Transaksi -->
     <div class="glass-panel">
@@ -217,6 +281,7 @@ let customWallets = JSON.parse(localStorage.getItem('myfinance_wallets')) || ['C
 let currentTab = 'keluar';
 let transactions = JSON.parse(localStorage.getItem('myfinance_transactions')) || [];
 let budgetLimit = Number(localStorage.getItem('myfinance_budget_limit')) || 1000000;
+let debts=JSON.parse(localStorage.getItem('myfinance_debts'))||[];
 let expenseChart = null;
 let searchTimeout = null;
 
@@ -230,6 +295,7 @@ window.onload = () => {
     switchTab('keluar');
     initChart();
     renderData();
+    if (typeof renderDebts === 'function') renderDebts();
 };
 
 function showToast(msg) {
@@ -499,85 +565,208 @@ function updateChartFast(categoryTotals) {
     expenseChart.update();
 }
 
-function backupJSON() {
-    const exportData = { wallets: customWallets, budgetLimit: budgetLimit, transactions: transactions };
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `MyFinance_Backup_${new Date().toISOString().substring(0,10)}.json`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
-    showToast("💾 Backup Berhasil!");
+
+/* ===== EXPORT / BACKUP PRO ===== */
+
+function renderDebts(){
+    const body=document.getElementById("debt-body");
+    if(!body)return;
+    const totalH=debts.filter(d=>d.type==="hutang").reduce((s,d)=>s+Math.max(0,Number(d.amount||0)-Number(d.paid||0)),0);
+    const totalP=debts.filter(d=>d.type==="piutang").reduce((s,d)=>s+Math.max(0,Number(d.amount||0)-Number(d.paid||0)),0);
+    document.getElementById("debt-total").innerText=formatRp(totalH);
+    document.getElementById("debt-receivable").innerText=formatRp(totalP);
+    document.getElementById("debt-overdue").innerText=formatRp(0);
+    body.innerHTML=debts.length?"<tr><td colspan='7' style='padding:20px'>Data hutang/piutang tersimpan. Buka ulang aplikasi untuk tampilan lengkap.</td></tr>":"<tr><td colspan='7' style='text-align:center;padding:20px'>Belum ada data hutang/piutang</td></tr>";
 }
 
-function restoreJSON(input) {
-    const file = input.files[0];
-    if (!file) return;
+function localISODate(){
+    const d=new Date();
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function downloadBlob(blob,filename){
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download=filename;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function csvCell(value){
+    return '"'+String(value??"").replace(/"/g,'""').replace(/\r?\n/g," ")+'"';
+}
 
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const data = JSON.parse(e.target.result);
-            if (data.transactions) {
-                transactions = data.transactions || [];
-                customWallets = data.wallets || customWallets;
-                budgetLimit = data.budgetLimit || budgetLimit;
-                
-                localStorage.setItem('myfinance_wallets', JSON.stringify(customWallets));
-                localStorage.setItem('myfinance_budget_limit', budgetLimit);
-                saveData();
-                
-                updateWalletDropdowns();
-                renderData();
-                showToast("📂 Restore Berhasil!");
-            }
-        } catch (err) {
-            showToast("❌ File JSON Tidak Valid!");
-        }
+function backupJSON(){
+    try{
+        const exportData={
+            app:"MyFinance Max",
+            backupVersion:3,
+            exportedAt:new Date().toISOString(),
+            wallets:Array.isArray(customWallets)?customWallets:[],
+            budgetLimit:Number(budgetLimit)||0,
+            transactions:Array.isArray(transactions)?transactions:[],
+            debts:Array.isArray(debts)?debts:[]
+        };
+        const json=JSON.stringify(exportData,null,2);
+        downloadBlob(
+            new Blob([json],{type:"application/json;charset=utf-8"}),
+            "MyFinance_Backup_"+localISODate()+".json"
+        );
+        showToast("💾 Backup JSON berhasil dibuat!");
+    }catch(e){
+        console.error(e);showToast("❌ Backup JSON gagal!");
+    }
+}
+
+function validateTransaction(t){
+    return t&&typeof t==="object"&&t.id!==undefined&&
+        typeof t.date==="string"&&
+        ["masuk","keluar","transfer"].includes(t.type)&&
+        Number.isFinite(Number(t.amount));
+}
+function validateDebt(d){
+    return d&&typeof d==="object"&&d.id!==undefined&&
+        typeof d.name==="string"&&
+        ["hutang","piutang"].includes(d.type)&&
+        Number.isFinite(Number(d.amount))&&
+        Number(d.amount)>=0&&
+        Number(d.paid||0)>=0&&
+        Number(d.paid||0)<=Number(d.amount);
+}
+
+function restoreJSON(input){
+    const file=input.files&&input.files[0];
+    if(!file)return;
+    const reader=new FileReader();
+    reader.onload=function(e){
+        try{
+            const data=JSON.parse(e.target.result);
+            if(!data||typeof data!=="object"||!Array.isArray(data.transactions))
+                throw new Error("Struktur backup tidak valid");
+
+            transactions=data.transactions.filter(validateTransaction).map(t=>({
+                ...t,id:Number(t.id),amount:Number(t.amount),
+                date:String(t.date),desc:String(t.desc??""),
+                category:String(t.category??""),wallet:String(t.wallet??""),
+                walletTarget:t.walletTarget?String(t.walletTarget):null
+            }));
+
+            debts=Array.isArray(data.debts)?data.debts.filter(validateDebt).map(d=>({
+                ...d,id:Number(d.id),name:String(d.name),
+                amount:Number(d.amount),paid:Number(d.paid||0),
+                dueDate:d.dueDate?String(d.dueDate):"",note:String(d.note??"")
+            })) : [];
+
+            if(Array.isArray(data.wallets)&&data.wallets.length)
+                customWallets=data.wallets.map(String).filter(Boolean);
+            if(Number(data.budgetLimit)>0)budgetLimit=Number(data.budgetLimit);
+
+            localStorage.setItem("myfinance_transactions",JSON.stringify(transactions));
+            localStorage.setItem("myfinance_debts",JSON.stringify(debts));
+            localStorage.setItem("myfinance_wallets",JSON.stringify(customWallets));
+            localStorage.setItem("myfinance_budget_limit",String(budgetLimit));
+
+            updateWalletDropdowns();renderData();
+            if(typeof renderDebts==="function")renderDebts();
+            showToast("📂 Restore berhasil • "+transactions.length+" transaksi • "+debts.length+" hutang/piutang");
+        }catch(err){
+            console.error(err);showToast("❌ JSON tidak valid atau rusak!");
+        }finally{input.value="";}
     };
+    reader.onerror=function(){input.value="";showToast("❌ File tidak dapat dibaca!");};
     reader.readAsText(file);
 }
 
-function exportCSV() {
-    let csv = "ID;Tanggal;Tipe;Keterangan;Kategori;Rekening Asal;Rekening Tujuan;Nominal\n";
-    transactions.forEach(t => {
-        csv += `${t.id};${t.date.substring(0,10)};${t.type};"${t.desc}";"${t.category}";${t.wallet};${t.walletTarget || '-'};${t.amount}\n`;
-    });
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `Laporan_Keuangan_${new Date().toISOString().substring(0,10)}.csv`;
-    a.click();
-    showToast("📊 File CSV Dibuat!");
+function exportCSV(){
+    try{
+        const rows=[["ID","Tanggal","Tipe","Keterangan","Kategori","Rekening Asal","Rekening Tujuan","Nominal"]];
+        (Array.isArray(transactions)?transactions:[]).forEach(t=>rows.push([
+            t.id,String(t.date??"").substring(0,10),t.type,t.desc,t.category,
+            t.wallet,t.walletTarget||"",Number(t.amount)||0
+        ]));
+        const csv=rows.map(r=>r.map(csvCell).join(";")).join("\r\n")+"\r\n";
+        downloadBlob(
+            new Blob(["\uFEFF",csv],{type:"text/csv;charset=utf-8;"}),
+            "Laporan_Keuangan_"+localISODate()+".csv"
+        );
+        showToast("📊 CSV berhasil dibuat • "+(rows.length-1)+" transaksi");
+    }catch(e){
+        console.error(e);showToast("❌ Export CSV gagal!");
+    }
 }
 
-function downloadPDF() {
-    if (!window.jspdf) return showToast("⚠️ Library PDF belum siap!");
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
+function downloadPDF(){
+    if(!window.jspdf||!window.jspdf.jsPDF){
+        showToast("⚠️ Library PDF belum siap. Buka aplikasi dengan internet aktif.");
+        return;
+    }
+    try{
+        const {jsPDF}=window.jspdf;
+        const doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
+        const period=document.getElementById("filter-month")?.value||"";
+        const search=(document.getElementById("search-input")?.value||"").trim().toLowerCase();
+        const data=(Array.isArray(transactions)?transactions:[]).filter(t=>{
+            const monthOK=!period||String(t.date||"").substring(0,7)===period;
+            const hay=[t.desc,t.category,t.wallet,t.walletTarget,t.type].join(" ").toLowerCase();
+            return monthOK&&(!search||hay.includes(search));
+        });
 
-    doc.setFont("helvetica", "bold"); doc.setFontSize(16);
-    doc.text("LAPORAN KEUANGAN PRIBADI", 105, 15, { align: "center" });
+        doc.setFont("helvetica","bold");doc.setFontSize(17);
+        doc.text("LAPORAN KEUANGAN PRIBADI",148.5,14,{align:"center"});
+        doc.setFont("helvetica","normal");doc.setFontSize(9);
+        doc.text("Periode: "+(period||"Semua")+"  •  "+localISODate(),148.5,20,{align:"center"});
 
-    let y = 30;
-    doc.setFontSize(9); doc.setFont("helvetica", "normal");
-    doc.text("Tanggal", 14, y); doc.text("Keterangan", 40, y); doc.text("Kategori", 90, y); doc.text("Rekening", 135, y); doc.text("Nominal", 170, y);
-    doc.line(14, y+2, 196, y+2);
-    y += 8;
+        const x=[10,34,78,124,190,258];
+        const headers=["Tanggal","Keterangan","Kategori","Rekening","Nominal","Tipe"];
+        let y=29;
 
-    transactions.slice(0, 30).forEach(t => {
-        doc.text(String(t.date.substring(0, 10)), 14, y);
-        doc.text(String(t.desc).substring(0, 22), 40, y);
-        doc.text(String(t.category), 90, y);
-        doc.text(String(t.wallet), 135, y);
-        doc.text(formatRp(t.amount), 170, y);
-        y += 6;
-    });
+        function drawHeader(){
+            doc.setFont("helvetica","bold");doc.setFontSize(8);
+            headers.forEach((h,i)=>doc.text(h,x[i],y));
+            doc.line(10,y+2,287,y+2);y+=7;
+            doc.setFont("helvetica","normal");
+        }
+        function wrap(v,w){return doc.splitTextToSize(String(v??""),w);}
+        drawHeader();
 
-    doc.save(`Laporan_Keuangan_${Date.now()}.pdf`);
-    showToast("📄 File PDF Dibuat!");
+        if(!data.length){
+            doc.setFontSize(10);
+            doc.text("Tidak ada transaksi pada filter yang dipilih.",148.5,y+12,{align:"center"});
+        }else{
+            data.forEach(t=>{
+                const cells=[
+                    String(t.date??"").substring(0,10),
+                    t.desc,t.category,
+                    t.type==="transfer"?(t.wallet+" → "+(t.walletTarget||"")):t.wallet,
+                    formatRp(t.amount),t.type
+                ];
+                const lines=cells.map(v=>wrap(v,32));
+                const rowH=Math.max(5,...lines.map(a=>a.length*4.1));
+
+                if(y+rowH>195){
+                    doc.addPage();y=14;
+                    doc.setFont("helvetica","bold");doc.setFontSize(10);
+                    doc.text("LAPORAN KEUANGAN PRIBADI",10,y);y+=8;
+                    drawHeader();
+                }
+                lines.forEach((arr,i)=>doc.text(arr,x[i],y));
+                doc.line(10,y+rowH-1,287,y+rowH-1);y+=rowH;
+            });
+        }
+
+        const masuk=data.filter(t=>t.type==="masuk").reduce((s,t)=>s+Number(t.amount||0),0);
+        const keluar=data.filter(t=>t.type==="keluar").reduce((s,t)=>s+Number(t.amount||0),0);
+        if(y>185){doc.addPage();y=15;}else y+=7;
+        doc.setFont("helvetica","bold");doc.setFontSize(9);
+        doc.text("Pemasukan: "+formatRp(masuk),10,y);
+        doc.text("Pengeluaran: "+formatRp(keluar),105,y);
+        doc.text("Selisih: "+formatRp(masuk-keluar),210,y);
+
+        doc.save("Laporan_Keuangan_"+(period||"Semua")+"_"+Date.now()+".pdf");
+        showToast("📄 PDF berhasil dibuat • "+data.length+" transaksi");
+    }catch(e){
+        console.error(e);showToast("❌ Export PDF gagal!");
+    }
 }
+
 </script>
 </body>
 </html>
